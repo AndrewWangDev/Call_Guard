@@ -27,7 +27,7 @@ Unlike traditional blockers that rely on cloud databases, this app uses **Regula
 
 | **Block History** | **Settings & Rules** | **Add Regex Rule** |
 |:---:|:---:|:---:|
-| <img src="screenshots/History.png" width="250"/> | <img src="screenshots/Setting.png" width="250"/> | <img src="screenshots/Add_number.png" width="250"/> |
+| <img src="Screenshots/History.png" width="250"/> | <img src="Screenshots/Setting.png" width="250"/> | <img src="Screenshots/Add_number.png" width="250"/> |
 
 ## 🛠️ Tech Stack
 
