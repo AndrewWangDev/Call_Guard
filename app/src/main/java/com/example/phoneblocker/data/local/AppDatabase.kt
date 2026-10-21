@@ -20,7 +20,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun getDatabase(context: Context): AppDatabase {
             return Instance ?: synchronized(this) {
-                Room.databaseBuilder(context, AppDatabase::class.java, "app_database")
+                Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "app_database")
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { Instance = it }
