@@ -1,8 +1,11 @@
 package com.example.phoneblocker
 
+import android.app.role.RoleManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -29,11 +32,21 @@ import com.example.phoneblocker.ui.screens.HistoryScreen
 import com.example.phoneblocker.ui.theme.PhoneBlockAppTheme
 
 class MainActivity : ComponentActivity() {
+
+    private val roleRequestLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        // Result handled by system role manager
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        val database = AppDatabase.getDatabase(this)
-        val userPreferencesRepository = UserPreferencesRepository(this)
+
+        // Request Call Screening Role on Android 10+ (API 29+)
+        checkAndRequestCallScreeningRole()
+
+        val database = AppDatabase.getDatabase(applicationContext)
+        val userPreferencesRepository = UserPreferencesRepository(applicationContext)
         val viewModelFactory = MainViewModelFactory(
             database.blockLogDao(),
             database.regexRuleDao(),
@@ -43,6 +56,16 @@ class MainActivity : ComponentActivity() {
         setContent {
             PhoneBlockAppTheme {
                 MainApp(viewModelFactory)
+            }
+        }
+    }
+
+    private fun checkAndRequestCallScreeningRole() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = getSystemService(RoleManager::class.java)
+            if (roleManager != null && !roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)) {
+                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING)
+                roleRequestLauncher.launch(intent)
             }
         }
     }
@@ -94,7 +117,7 @@ fun MainApp(viewModelFactory: MainViewModelFactory) {
             composable(Screen.Settings.route) {
                 val isBlockingEnabled by viewModel.isBlockingEnabled.collectAsState()
                 val regexRules by viewModel.regexRules.collectAsState()
-                
+
                 ConfigScreen(
                     isBlockingEnabled = isBlockingEnabled,
                     onBlockingEnabledChange = { viewModel.setBlockingEnabled(it) },

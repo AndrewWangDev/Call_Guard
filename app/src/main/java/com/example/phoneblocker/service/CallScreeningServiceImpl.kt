@@ -1,86 +1,115 @@
 package com.example.phoneblocker.service
 
-import android.net.Uri
 import android.telecom.Call
 import android.telecom.CallScreeningService
+import android.util.Log
 import com.example.phoneblocker.data.local.AppDatabase
 import com.example.phoneblocker.data.local.entity.BlockLog
+import com.example.phoneblocker.data.local.entity.RegexRule
 import com.example.phoneblocker.data.local.entity.RuleType
 import com.example.phoneblocker.data.repository.UserPreferencesRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import java.util.regex.Pattern
+import java.util.regex.PatternSyntaxException
 
 class CallScreeningServiceImpl : CallScreeningService() {
 
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    override fun onDestroy() {
+        super.onDestroy()
+        serviceScope.cancel()
+    }
+
     override fun onScreenCall(callDetails: Call.Details) {
+        // Only screen incoming calls; never block outgoing calls
+        if (callDetails.callDirection != Call.Details.DIRECTION_INCOMING) {
+            respondToCall(callDetails, allowCallResponse())
+            return
+        }
+
         val context = applicationContext
         val database = AppDatabase.getDatabase(context)
         val repository = UserPreferencesRepository(context)
         val blockLogDao = database.blockLogDao()
         val regexRuleDao = database.regexRuleDao()
 
-        // 1. Master Switch Check
-        val isBlockingEnabled = runBlocking {
-            repository.isBlockingEnabled.first()
-        }
-
-        if (!isBlockingEnabled) {
-            respondToCall(callDetails, allowCallResponse())
-            return
-        }
-
-        // 2. Phone Number Sanitization
-        val rawNumber = callDetails.handle?.schemeSpecificPart ?: ""
-        // Remove "tel:" prefix if present (schemeSpecificPart usually handles this, but safer to be sure)
-        // and remove all non-digit characters except '+'
-        val sanitizedNumber = rawNumber.replace(Regex("[^0-9+]"), "")
-
-        if (sanitizedNumber.isBlank()) {
-            respondToCall(callDetails, allowCallResponse())
-            return
-        }
-
-        // 3. Matching Logic
-        // We need to fetch rules blocking here to ensure synchronous decision
-        val rules = runBlocking {
-            regexRuleDao.getAllRules().first()
-        }
-
-        // Step A (Whitelist)
-        val whitelistRules = rules.filter { it.type == RuleType.WHITELIST }
-        for (rule in whitelistRules) {
-            if (Regex(rule.pattern).matches(sanitizedNumber)) {
-                respondToCall(callDetails, allowCallResponse())
-                return
-            }
-        }
-
-        // Step B (Blacklist)
-        val blacklistRules = rules.filter { it.type == RuleType.BLACKLIST }
-        for (rule in blacklistRules) {
-            if (Regex(rule.pattern).matches(sanitizedNumber)) {
-                // BLOCK
-                respondToCall(callDetails, blockCallResponse())
-                
-                // Logging Action (Async)
-                CoroutineScope(Dispatchers.IO).launch {
-                    blockLogDao.insertLog(
-                        BlockLog(
-                            phoneNumber = sanitizedNumber,
-                            timestamp = System.currentTimeMillis(),
-                            reason = rule.pattern
-                        )
-                    )
+        serviceScope.launch {
+            try {
+                // 1. Master Switch Check
+                val isBlockingEnabled = repository.isBlockingEnabled.firstOrNull() ?: false
+                if (!isBlockingEnabled) {
+                    respondToCall(callDetails, allowCallResponse())
+                    return@launch
                 }
-                return
+
+                // 2. Phone Number Sanitization
+                val rawNumber = callDetails.handle?.schemeSpecificPart.orEmpty()
+                val sanitizedNumber = rawNumber.replace(Regex("[^0-9+]"), "")
+                val digitsOnly = sanitizedNumber.removePrefix("+")
+
+                if (sanitizedNumber.isBlank()) {
+                    respondToCall(callDetails, allowCallResponse())
+                    return@launch
+                }
+
+                // 3. Fetch rules from database directly without Flow observer overhead
+                val rules = regexRuleDao.getAllRulesDirect()
+
+                // Step A: Whitelist (Priority check)
+                val whitelistRules = rules.filter { it.type == RuleType.WHITELIST }
+                val matchedWhitelist = findMatchedRule(whitelistRules, sanitizedNumber, digitsOnly)
+                if (matchedWhitelist != null) {
+                    respondToCall(callDetails, allowCallResponse())
+                    return@launch
+                }
+
+                // Step B: Blacklist
+                val blacklistRules = rules.filter { it.type == RuleType.BLACKLIST }
+                val matchedBlacklist = findMatchedRule(blacklistRules, sanitizedNumber, digitsOnly)
+                if (matchedBlacklist != null) {
+                    // Log the block event before responding
+                    try {
+                        blockLogDao.insertLog(
+                            BlockLog(
+                                phoneNumber = sanitizedNumber,
+                                timestamp = System.currentTimeMillis(),
+                                reason = matchedBlacklist.pattern
+                            )
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to insert block log", e)
+                    }
+
+                    respondToCall(callDetails, blockCallResponse())
+                    return@launch
+                }
+
+                // Step C: Default allow
+                respondToCall(callDetails, allowCallResponse())
+            } catch (e: Exception) {
+                Log.e(TAG, "Unexpected error in onScreenCall, fallback to allow call", e)
+                respondToCall(callDetails, allowCallResponse())
             }
         }
+    }
 
-        // Step C (Default)
-        respondToCall(callDetails, allowCallResponse())
+    private fun findMatchedRule(
+        rules: List<RegexRule>,
+        sanitizedNumber: String,
+        digitsOnly: String
+    ): RegexRule? {
+        for (rule in rules) {
+            if (matchesPattern(rule.pattern, sanitizedNumber, digitsOnly)) {
+                return rule
+            }
+        }
+        return null
     }
 
     private fun allowCallResponse(): CallResponse {
@@ -96,8 +125,44 @@ class CallScreeningServiceImpl : CallScreeningService() {
         return CallResponse.Builder()
             .setDisallowCall(true)
             .setRejectCall(true)
-            .setSkipCallLog(false) // User might want to see it in system log too, but prompt requested skip notification
+            .setSkipCallLog(false)
             .setSkipNotification(true)
             .build()
+    }
+
+    companion object {
+        private const val TAG = "CallScreeningService"
+
+        /**
+         * Safely checks whether the number matches the regex pattern.
+         * Handles both full number (with leading +) and digits-only format.
+         * Resilient against leading unescaped + meta-character.
+         */
+        fun matchesPattern(patternString: String, sanitizedNumber: String, digitsOnly: String): Boolean {
+            val pattern = try {
+                Pattern.compile(patternString)
+            } catch (e: PatternSyntaxException) {
+                // If user entered +number, escape the leading '+'
+                if (patternString.startsWith("+")) {
+                    try {
+                        Pattern.compile("\\" + patternString)
+                    } catch (ignored: Exception) {
+                        Log.w(TAG, "Invalid regex pattern: $patternString", ignored)
+                        return false
+                    }
+                } else {
+                    Log.w(TAG, "Invalid regex pattern: $patternString", e)
+                    return false
+                }
+            }
+
+            return try {
+                pattern.matcher(sanitizedNumber).matches() ||
+                pattern.matcher(digitsOnly).matches()
+            } catch (e: Exception) {
+                Log.w(TAG, "Error matching regex: $patternString", e)
+                false
+            }
+        }
     }
 }
