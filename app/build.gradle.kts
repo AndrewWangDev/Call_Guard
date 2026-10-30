@@ -9,8 +9,8 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.phoneblocker"
-        minSdk = 26
+        applicationId = "com.andrewwang.callguard"
+        minSdk = 29
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"

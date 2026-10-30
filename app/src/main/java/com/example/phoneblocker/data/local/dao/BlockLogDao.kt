@@ -8,12 +8,15 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface BlockLogDao {
-    @Query("SELECT * FROM block_log ORDER BY timestamp DESC")
+    @Query("SELECT * FROM block_log ORDER BY timestamp DESC LIMIT 300")
     fun getAllLogs(): Flow<List<BlockLog>>
 
     @Insert
     suspend fun insertLog(log: BlockLog)
-    
+
+    @Query("DELETE FROM block_log WHERE timestamp < :cutoffTimestamp")
+    suspend fun pruneOldLogs(cutoffTimestamp: Long)
+
     @Query("DELETE FROM block_log")
     suspend fun clearLogs()
 }

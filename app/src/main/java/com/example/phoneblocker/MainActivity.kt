@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -16,7 +17,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -33,10 +33,20 @@ import com.example.phoneblocker.ui.theme.PhoneBlockAppTheme
 
 class MainActivity : ComponentActivity() {
 
+    private val viewModel: MainViewModel by viewModels {
+        val database = AppDatabase.getDatabase(applicationContext)
+        val userPreferencesRepository = UserPreferencesRepository(applicationContext)
+        MainViewModelFactory(
+            database.blockLogDao(),
+            database.regexRuleDao(),
+            userPreferencesRepository
+        )
+    }
+
     private val roleRequestLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
-        // Result handled by system role manager
+        checkRoleStatus()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,18 +55,28 @@ class MainActivity : ComponentActivity() {
         // Request Call Screening Role on Android 10+ (API 29+)
         checkAndRequestCallScreeningRole()
 
-        val database = AppDatabase.getDatabase(applicationContext)
-        val userPreferencesRepository = UserPreferencesRepository(applicationContext)
-        val viewModelFactory = MainViewModelFactory(
-            database.blockLogDao(),
-            database.regexRuleDao(),
-            userPreferencesRepository
-        )
-
         setContent {
             PhoneBlockAppTheme {
-                MainApp(viewModelFactory)
+                MainApp(
+                    viewModel = viewModel,
+                    onRequestRole = { checkAndRequestCallScreeningRole() }
+                )
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkRoleStatus()
+    }
+
+    private fun checkRoleStatus() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = getSystemService(RoleManager::class.java)
+            val isHeld = roleManager?.isRoleHeld(RoleManager.ROLE_CALL_SCREENING) == true
+            viewModel.updateRoleState(isHeld)
+        } else {
+            viewModel.updateRoleState(true)
         }
     }
 
@@ -72,9 +92,11 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MainApp(viewModelFactory: MainViewModelFactory) {
+fun MainApp(
+    viewModel: MainViewModel,
+    onRequestRole: () -> Unit
+) {
     val navController = rememberNavController()
-    val viewModel: MainViewModel = viewModel(factory = viewModelFactory)
     val screens = listOf(Screen.History, Screen.Settings)
 
     Scaffold(
@@ -116,11 +138,17 @@ fun MainApp(viewModelFactory: MainViewModelFactory) {
             }
             composable(Screen.Settings.route) {
                 val isBlockingEnabled by viewModel.isBlockingEnabled.collectAsState()
+                val isBlockUnknownEnabled by viewModel.isBlockUnknownEnabled.collectAsState()
+                val isRoleHeld by viewModel.isRoleHeld.collectAsState()
                 val regexRules by viewModel.regexRules.collectAsState()
 
                 ConfigScreen(
                     isBlockingEnabled = isBlockingEnabled,
                     onBlockingEnabledChange = { viewModel.setBlockingEnabled(it) },
+                    isBlockUnknownEnabled = isBlockUnknownEnabled,
+                    onBlockUnknownEnabledChange = { viewModel.setBlockUnknownEnabled(it) },
+                    isRoleHeld = isRoleHeld,
+                    onRequestRole = onRequestRole,
                     regexRules = regexRules,
                     onAddRule = { pattern, type -> viewModel.addRule(pattern, type) },
                     onDeleteRule = { rule -> viewModel.deleteRule(rule) }

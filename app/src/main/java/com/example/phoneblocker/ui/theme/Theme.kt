@@ -50,9 +50,9 @@ fun PhoneBlockAppTheme(
             val activity = view.context.findActivity()
             activity?.let {
                 val window = it.window
-                window.statusBarColor = colorScheme.primary.toArgb()
-                // In dark theme, icons should be light (!darkTheme = false).
-                // In light theme, icons should be dark (!darkTheme = true).
+                // Use surface color as status bar background to ensure high contrast
+                // with system icons in both light and dark themes without unreadable color clashing.
+                window.statusBarColor = colorScheme.surface.toArgb()
                 WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
             }
         }
