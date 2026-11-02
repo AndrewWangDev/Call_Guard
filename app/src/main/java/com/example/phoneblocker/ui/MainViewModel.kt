@@ -9,6 +9,7 @@ import com.example.phoneblocker.data.local.entity.RegexRule
 import com.example.phoneblocker.data.local.entity.RuleType
 import com.example.phoneblocker.data.repository.UserPreferencesRepository
 import com.example.phoneblocker.service.CallScreeningServiceImpl
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +22,17 @@ class MainViewModel(
     private val regexRuleDao: RegexRuleDao,
     private val userPreferencesRepository: UserPreferencesRepository
 ) : ViewModel() {
+
+    init {
+        // Prune logs older than 30 days to avoid unbounded physical table growth
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val thirtyDaysAgo = System.currentTimeMillis() - 30L * 24 * 3600 * 1000
+                blockLogDao.pruneOldLogs(thirtyDaysAgo)
+            } catch (ignored: Exception) {
+            }
+        }
+    }
 
     val blockLogs = blockLogDao.getAllLogs()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

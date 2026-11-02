@@ -407,7 +407,7 @@ fun AddRuleDialog(
         try {
             val safeRegex = when {
                 trimmed.startsWith("+") -> "\\" + trimmed
-                trimmed.startsWith("^+") -> "^\\+" + trimmed.removePrefix("^+")
+                trimmed.startsWith("^+") && !trimmed.startsWith("^[+") -> "^\\+" + trimmed.removePrefix("^+")
                 else -> trimmed
             }
             Pattern.compile(safeRegex)

@@ -23,6 +23,8 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_block_log_timestamp` ON `block_log` (`timestamp`)")
+                // Clean up any duplicate patterns before creating the unique index to prevent SQLiteConstraintException and destructive reset
+                db.execSQL("DELETE FROM regex_rule WHERE id NOT IN (SELECT MIN(id) FROM regex_rule GROUP BY pattern)")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_regex_rule_pattern` ON `regex_rule` (`pattern`)")
             }
         }
