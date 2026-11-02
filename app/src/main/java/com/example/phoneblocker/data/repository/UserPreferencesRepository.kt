@@ -40,7 +40,7 @@ class UserPreferencesRepository(context: Context) {
             }
         }
         .map { preferences ->
-            preferences[IS_BLOCK_UNKNOWN_ENABLED] ?: false
+            preferences[IS_BLOCK_UNKNOWN_ENABLED] ?: true
         }
 
     suspend fun saveBlockingEnabled(enabled: Boolean) {

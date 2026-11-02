@@ -165,7 +165,7 @@ fun ConfigScreen(
                                 style = MaterialTheme.typography.titleMedium
                             )
                             Text(
-                                text = "Silently block hidden, restricted, or private callers without caller ID",
+                                text = "Silently block hidden, restricted, or private callers without caller ID (Enabled by default)",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -391,23 +391,29 @@ fun AddRuleDialog(
     var selectedType by remember { mutableStateOf(initialType) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    fun validatePattern(input: String) {
+    fun validatePattern(input: String, type: RuleType = selectedType) {
         val trimmed = input.trim()
         if (trimmed.isBlank()) {
             errorMessage = "Pattern cannot be empty"
             return
         }
 
-        // Check duplicate
-        if (existingRules.any { it.pattern == trimmed }) {
-            errorMessage = "This pattern already exists"
+        // Check duplicate and blacklist/whitelist conflict
+        val existingRule = existingRules.find { it.pattern == trimmed }
+        if (existingRule != null) {
+            errorMessage = if (existingRule.type == type) {
+                "This pattern already exists in ${type.name.lowercase().replaceFirstChar { it.uppercase() }}"
+            } else {
+                val otherType = existingRule.type.name.lowercase().replaceFirstChar { it.uppercase() }
+                "Conflict: already exists in $otherType (delete it there first)"
+            }
             return
         }
 
         try {
             val safeRegex = when {
                 trimmed.startsWith("+") -> "\\" + trimmed
-                trimmed.startsWith("^+") && !trimmed.startsWith("^[+") -> "^\\+" + trimmed.removePrefix("^+")
+                trimmed.startsWith("^+") -> "^\\+" + trimmed.removePrefix("^+")
                 else -> trimmed
             }
             Pattern.compile(safeRegex)
@@ -426,7 +432,7 @@ fun AddRuleDialog(
                     value = pattern,
                     onValueChange = {
                         pattern = it
-                        validatePattern(it)
+                        validatePattern(it, selectedType)
                     },
                     label = { Text("Regex Pattern (e.g. ^1\\d{10}$)") },
                     isError = errorMessage != null,
@@ -454,13 +460,19 @@ fun AddRuleDialog(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(
                         selected = selectedType == RuleType.BLACKLIST,
-                        onClick = { selectedType = RuleType.BLACKLIST }
+                        onClick = {
+                            selectedType = RuleType.BLACKLIST
+                            validatePattern(pattern, RuleType.BLACKLIST)
+                        }
                     )
                     Text("Blacklist")
                     Spacer(modifier = Modifier.width(16.dp))
                     RadioButton(
                         selected = selectedType == RuleType.WHITELIST,
-                        onClick = { selectedType = RuleType.WHITELIST }
+                        onClick = {
+                            selectedType = RuleType.WHITELIST
+                            validatePattern(pattern, RuleType.WHITELIST)
+                        }
                     )
                     Text("Whitelist")
                 }
