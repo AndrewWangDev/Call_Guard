@@ -462,7 +462,9 @@ fun AddRuleDialog(
                         selected = selectedType == RuleType.BLACKLIST,
                         onClick = {
                             selectedType = RuleType.BLACKLIST
-                            validatePattern(pattern, RuleType.BLACKLIST)
+                            if (pattern.isNotBlank()) {
+                                validatePattern(pattern, RuleType.BLACKLIST)
+                            }
                         }
                     )
                     Text("Blacklist")
@@ -471,7 +473,9 @@ fun AddRuleDialog(
                         selected = selectedType == RuleType.WHITELIST,
                         onClick = {
                             selectedType = RuleType.WHITELIST
-                            validatePattern(pattern, RuleType.WHITELIST)
+                            if (pattern.isNotBlank()) {
+                                validatePattern(pattern, RuleType.WHITELIST)
+                            }
                         }
                     )
                     Text("Whitelist")

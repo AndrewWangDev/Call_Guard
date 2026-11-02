@@ -44,7 +44,7 @@ class MainViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val isBlockUnknownEnabled = userPreferencesRepository.isBlockUnknownEnabled
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     private val _isRoleHeld = MutableStateFlow(true)
     val isRoleHeld: StateFlow<Boolean> = _isRoleHeld.asStateFlow()
