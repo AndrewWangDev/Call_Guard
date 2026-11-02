@@ -40,6 +40,30 @@ class CallScreeningMatcherTest {
     }
 
     @Test
+    fun testDomesticLandlineNormalization() {
+        // Beijing landline rule: starts with 010
+        val beijingRule = "^010.*"
+        // Delivered as +861088888888
+        val rawNumber = "+861088888888"
+        val digitsOnly = "861088888888"
+        assertTrue(CallScreeningServiceImpl.matchesPattern(beijingRule, rawNumber, digitsOnly))
+
+        // Shanghai landline rule: starts with 021
+        val shanghaiRule = "^021\\d{8}$"
+        val shRaw = "+862112345678"
+        val shDigits = "862112345678"
+        assertTrue(CallScreeningServiceImpl.matchesPattern(shanghaiRule, shRaw, shDigits))
+    }
+
+    @Test
+    fun testCharacterClassStartingWithPlus() {
+        // Pattern starting with bracketed character class containing +
+        val pattern = "^[+0-9]{5,}$"
+        assertTrue(CallScreeningServiceImpl.matchesPattern(pattern, "+8613800138000", "8613800138000"))
+        assertTrue(CallScreeningServiceImpl.matchesPattern(pattern, "13800138000", "13800138000"))
+    }
+
+    @Test
     fun testCountryCodeNormalization() {
         // User configures standard 11-digit mobile number rule
         val rule = "^138\\d{8}$"

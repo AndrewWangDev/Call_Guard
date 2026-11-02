@@ -14,7 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Pattern
 
@@ -37,20 +37,22 @@ class CallScreeningServiceImpl : CallScreeningService() {
 
         serviceScope.launch {
             try {
-                // 1. Enforce a 3-second hard timeout to avoid reaching Telecom's 5-second hard limit
-                withTimeout(3000L) {
+                // Enforce a 3-second hard timeout using withTimeoutOrNull to prevent TimeoutCancellationException swallowing
+                val isHandled = withTimeoutOrNull(3000L) {
                     // Master Switch Check
                     val isBlockingEnabled = repository.isBlockingEnabled.firstOrNull() ?: false
                     if (!isBlockingEnabled) {
                         safeRespondToCall(callDetails, allowCallResponse())
-                        return@withTimeout
+                        return@withTimeoutOrNull true
                     }
 
-                    // 2. Phone Number Sanitization & Normalization
+                    // 2. Phone Number Sanitization & Multi-format Normalization
                     val rawNumber = callDetails.handle?.schemeSpecificPart.orEmpty()
                     val sanitizedNumber = rawNumber.replace(Regex("[^0-9+]"), "")
                     val digitsOnly = sanitizedNumber.removePrefix("+")
                     val localNumber = digitsOnly.removePrefix("86")
+                    // Restore national trunk prefix '0' for domestic landlines (e.g., +8610... -> 010..., +8621... -> 021...)
+                    val nationalLandline = restoreNationalLandline(localNumber)
 
                     // Handle private/unknown/restricted caller
                     if (sanitizedNumber.isBlank()) {
@@ -61,7 +63,7 @@ class CallScreeningServiceImpl : CallScreeningService() {
                         } else {
                             safeRespondToCall(callDetails, allowCallResponse())
                         }
-                        return@withTimeout
+                        return@withTimeoutOrNull true
                     }
 
                     // 3. Fetch rules from database directly without Flow observer overhead
@@ -69,30 +71,37 @@ class CallScreeningServiceImpl : CallScreeningService() {
 
                     // Step A: Whitelist (Priority check)
                     val whitelistRules = rules.filter { it.type == RuleType.WHITELIST }
-                    if (findMatchedRule(whitelistRules, sanitizedNumber, digitsOnly, localNumber) != null) {
+                    if (findMatchedRule(whitelistRules, sanitizedNumber, digitsOnly, localNumber, nationalLandline) != null) {
                         safeRespondToCall(callDetails, allowCallResponse())
-                        return@withTimeout
+                        return@withTimeoutOrNull true
                     }
 
                     // Step B: Blacklist
                     val blacklistRules = rules.filter { it.type == RuleType.BLACKLIST }
-                    val matchedBlacklist = findMatchedRule(blacklistRules, sanitizedNumber, digitsOnly, localNumber)
+                    val matchedBlacklist = findMatchedRule(blacklistRules, sanitizedNumber, digitsOnly, localNumber, nationalLandline)
                     if (matchedBlacklist != null) {
-                        // Crucial fix: Respond immediately to eliminate "first ring glitch"!
+                        // Respond immediately to eliminate "first ring glitch"!
                         safeRespondToCall(callDetails, blockCallResponse())
 
                         // Persist log asynchronously without blocking the decision
                         logBlockEvent(blockLogDao, sanitizedNumber, matchedBlacklist.pattern)
-                        return@withTimeout
+                        return@withTimeoutOrNull true
                     }
 
                     // Step C: Default allow
                     safeRespondToCall(callDetails, allowCallResponse())
+                    true
+                }
+
+                // Handle 3-second timeout fallback
+                if (isHandled == null) {
+                    Log.w(TAG, "Screening timed out after 3000ms, fallback to allow call")
+                    safeRespondToCall(callDetails, allowCallResponse())
                 }
             } catch (e: Exception) {
-                // Avoid calling into dead binder if coroutine was cancelled
+                // Avoid calling into dead binder if service was unbound
                 if (e !is CancellationException) {
-                    Log.e(TAG, "Unexpected error/timeout in onScreenCall, fallback to allow call", e)
+                    Log.e(TAG, "Unexpected error in onScreenCall, fallback to allow call", e)
                     safeRespondToCall(callDetails, allowCallResponse())
                 }
             }
@@ -127,10 +136,11 @@ class CallScreeningServiceImpl : CallScreeningService() {
         rules: List<RegexRule>,
         sanitizedNumber: String,
         digitsOnly: String,
-        localNumber: String
+        localNumber: String,
+        nationalLandline: String
     ): RegexRule? {
         for (rule in rules) {
-            if (matchesPattern(rule.pattern, sanitizedNumber, digitsOnly, localNumber)) {
+            if (matchesPattern(rule.pattern, sanitizedNumber, digitsOnly, localNumber, nationalLandline)) {
                 return rule
             }
         }
@@ -163,16 +173,31 @@ class CallScreeningServiceImpl : CallScreeningService() {
             patternCache.clear()
         }
 
+        fun restoreNationalLandline(localNumber: String): String {
+            return if (localNumber.isNotEmpty() && !localNumber.startsWith("0")) {
+                // Beijing landline is 10-xxxxxxx, other landlines start with 2-9.
+                // Mobile numbers start with 1[3-9].
+                if (localNumber.startsWith("10") || !localNumber.startsWith("1")) {
+                    "0$localNumber"
+                } else {
+                    localNumber
+                }
+            } else {
+                localNumber
+            }
+        }
+
         /**
          * Safely checks whether the number matches the regex pattern.
-         * Handles raw number (with '+'), digits-only, and country-code-stripped local numbers.
-         * Resilient against leading unescaped '+' and '^+' meta-characters.
+         * Handles raw number (with '+'), digits-only, country-code-stripped (+86),
+         * and landline-restored numbers.
          */
         fun matchesPattern(
             patternString: String,
             sanitizedNumber: String,
             digitsOnly: String,
-            localNumber: String = digitsOnly.removePrefix("86")
+            localNumber: String = digitsOnly.removePrefix("86"),
+            nationalLandline: String = restoreNationalLandline(localNumber)
         ): Boolean {
             val cleanPattern = patternString.trim()
             if (cleanPattern.isBlank()) return false
@@ -181,7 +206,8 @@ class CallScreeningServiceImpl : CallScreeningService() {
                 try {
                     val safeRegex = when {
                         raw.startsWith("+") -> "\\" + raw
-                        raw.startsWith("^+") -> "^\\+" + raw.removePrefix("^+")
+                        // Avoid escaping bracketed character classes like ^[+0-9]
+                        raw.startsWith("^+") && !raw.startsWith("^[+") -> "^\\+" + raw.removePrefix("^+")
                         else -> raw
                     }
                     Pattern.compile(safeRegex)
@@ -194,7 +220,8 @@ class CallScreeningServiceImpl : CallScreeningService() {
             return try {
                 pattern.matcher(sanitizedNumber).matches() ||
                 pattern.matcher(digitsOnly).matches() ||
-                pattern.matcher(localNumber).matches()
+                pattern.matcher(localNumber).matches() ||
+                pattern.matcher(nationalLandline).matches()
             } catch (e: Exception) {
                 Log.w(TAG, "Error matching regex: $cleanPattern", e)
                 false
