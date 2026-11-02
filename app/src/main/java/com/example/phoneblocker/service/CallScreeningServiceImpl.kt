@@ -206,8 +206,7 @@ class CallScreeningServiceImpl : CallScreeningService() {
                 try {
                     val safeRegex = when {
                         raw.startsWith("+") -> "\\" + raw
-                        // Avoid escaping bracketed character classes like ^[+0-9]
-                        raw.startsWith("^+") && !raw.startsWith("^[+") -> "^\\+" + raw.removePrefix("^+")
+                        raw.startsWith("^+") -> "^\\+" + raw.removePrefix("^+")
                         else -> raw
                     }
                     Pattern.compile(safeRegex)
