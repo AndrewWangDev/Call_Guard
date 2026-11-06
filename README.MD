@@ -1,9 +1,10 @@
 # Compose Call Guard 🛡️
 
-![Android](https://img.shields.io/badge/Android-12%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)
+![Android](https://img.shields.io/badge/Android-10%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-1.9.0-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)
 ![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)
+![Status](https://img.shields.io/badge/Status-Archived-lightgrey.svg?style=for-the-badge)
 
 **Compose Call Guard** is a lightweight, privacy-focused Android call blocking application built with modern Android architecture. 
 
@@ -19,7 +20,7 @@ Unlike traditional blockers that rely on cloud databases, this app uses **Regula
 -   **Dual-Layer Filtering**: 
     1.  **Whitelist (Priority)**: Numbers matching these rules are always allowed.
     2.  **Blacklist**: Numbers matching these rules are silently rejected.
--   **Privacy First**: Runs 100% offline using Android's `CallScreeningService`. No contacts uploaded, no internet permission required.
+-   **Privacy-by-Design**: Runs 100% offline using Android's native `CallScreeningService`. Zero network permissions, no contacts uploaded, zero data leaves the device.
 -   **Material You Design**: Built entirely with Jetpack Compose and Material 3, supporting Dynamic Colors.
 -   **History Log**: Keep track of blocked calls with timestamps and matched rules.
 
@@ -43,13 +44,13 @@ Unlike traditional blockers that rely on cloud databases, this app uses **Regula
 
 ### Prerequisites
 * Android Studio Iguana or newer.
-* JDK 17+.
+* JDK 21+.
 * Android Device/Emulator running API Level 29 (Android 10) or higher.
 
 ### Installation
 1.  Clone the repository:
     ```bash
-    git clone [https://github.com/AndrewWangDev/Compose-Call-Guard.git](https://github.com/AndrewWangDev/Compose-Call-Guard.git)
+    git clone https://github.com/AndrewWangDev/Compose-Call-Guard.git
     ```
 2.  Open the project in Android Studio.
 3.  Sync Gradle and Build.
@@ -64,9 +65,11 @@ The app utilizes the `CallScreeningService` API. When an incoming call arrives:
 4.  If not whitelisted, it checks against **Blacklist Regexes**.
 5.  If matched, the call is rejected without notification, and the event is logged asynchronously.
 
-## 🤝 Contribution
+## 🤝 Project Status & Contributions
 
-Contributions are welcome! Please fork the repository and submit a Pull Request.
+This repository is currently in a **completed and archived (read-only)** state. New feature pull requests are no longer being merged into `main`.
+
+You are warmly encouraged to fork this repository under the **MIT License** and build upon it for custom filtering needs.
 
 ## 📄 License
 

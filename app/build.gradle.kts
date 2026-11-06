@@ -24,11 +24,12 @@ android {
     signingConfigs {
         create("release") {
             val keystoreFile = rootProject.file("release.jks")
-            if (keystoreFile.exists()) {
+            val envPassword = System.getenv("KEYSTORE_PASSWORD")
+            if (keystoreFile.exists() && !envPassword.isNullOrBlank()) {
                 storeFile = keystoreFile
-                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "callguard123"
+                storePassword = envPassword
                 keyAlias = System.getenv("KEY_ALIAS") ?: "callguard"
-                keyPassword = System.getenv("KEY_PASSWORD") ?: "callguard123"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: envPassword
                 enableV1Signing = true
                 enableV2Signing = true
             }
@@ -41,7 +42,8 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             val keystoreFile = rootProject.file("release.jks")
-            if (keystoreFile.exists()) {
+            val envPassword = System.getenv("KEYSTORE_PASSWORD")
+            if (keystoreFile.exists() && !envPassword.isNullOrBlank()) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }

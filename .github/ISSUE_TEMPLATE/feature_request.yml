@@ -1,0 +1,23 @@
+name: Feature / Algorithm Proposal
+description: Suggest an idea, architectural enhancement, or regex matching improvement.
+title: "[Idea]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        *Note: Compose Call Guard is in read-only archive mode. Feature proposals serve as reference designs for forks.*
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your proposal related to a specific limitation or edge case?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: Describe the design, algorithm, or user interface improvement.
+    validations:
+      required: true
